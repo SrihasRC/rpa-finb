@@ -1,0 +1,460 @@
+# System Architecture & Flow Diagrams
+
+## 1. Overall System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    DATA LAYER                                │
+│  ┌────────────────┐         ┌─────────────────┐            │
+│  │ Synthetic Data │ ──────> │ transactions.csv│            │
+│  │   Generator    │         │  (1000 records) │            │
+│  └────────────────┘         └─────────────────┘            │
+└─────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   PROCESSING LAYER                           │
+│                                                              │
+│  ┌──────────────────────┐    ┌──────────────────────┐      │
+│  │   Rule Engine        │    │   ML Model           │      │
+│  │  ┌───────────────┐   │    │  ┌────────────────┐  │      │
+│  │  │ 10 Compliance │   │    │  │ Random Forest  │  │      │
+│  │  │ Rules         │   │    │  │ Classifier     │  │      │
+│  │  └───────────────┘   │    │  └────────────────┘  │      │
+│  │  - BSA              │    │  - 100 trees          │      │
+│  │  - FATF             │    │  - 13 features        │      │
+│  │  - OFAC             │    │  - Risk score 0-1     │      │
+│  │  - Structuring      │    │  - Balanced weights   │      │
+│  │  - KYC              │    │                       │      │
+│  └──────────────────────┘    └──────────────────────┘      │
+│            │                           │                     │
+│            └──────────┬────────────────┘                     │
+│                       ▼                                      │
+│            ┌─────────────────────┐                          │
+│            │  Risk Aggregation   │                          │
+│            │  - Sanctions Check  │                          │
+│            │  - ML Score > 0.8   │                          │
+│            │  - Rules >= 2       │                          │
+│            │  → Final Risk       │                          │
+│            └─────────────────────┘                          │
+└─────────────────────────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    API LAYER                                 │
+│                                                              │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │            FastAPI REST Server                      │    │
+│  │                (Port 8000)                          │    │
+│  │                                                      │    │
+│  │  Endpoints:                                         │    │
+│  │  • GET  /transactions                               │    │
+│  │  • GET  /transactions/summary                       │    │
+│  │  • GET  /rules                                      │    │
+│  │  • POST /predict                                    │    │
+│  │  • POST /compliance-check                           │    │
+│  │  • GET  /health                                     │    │
+│  │                                                      │    │
+│  │  Interactive Docs: /docs                            │    │
+│  └────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  INTEGRATION LAYER                           │
+│                                                              │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │              UiPath RPA Workflow                    │    │
+│  │                                                      │    │
+│  │  1. Read CSV                                        │    │
+│  │  2. For Each Transaction:                          │    │
+│  │     - Build JSON                                    │    │
+│  │     - HTTP POST /compliance-check                   │    │
+│  │     - Parse Response                                │    │
+│  │     - Store Results                                 │    │
+│  │  3. Generate Excel Report                           │    │
+│  │                                                      │    │
+│  └────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   OUTPUT LAYER                               │
+│                                                              │
+│  ┌──────────────────────┐  ┌──────────────────────┐        │
+│  │ compliance_report.csv│  │ flagged_transactions │        │
+│  │ - All transactions   │  │ - Medium/High risk   │        │
+│  │ - Rules triggered    │  │ - Sorted by score    │        │
+│  │ - Risk scores        │  │ - Filtered results   │        │
+│  └──────────────────────┘  └──────────────────────┘        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 2. Transaction Processing Flow
+
+```
+START
+  │
+  ▼
+┌────────────────┐
+│  Transaction   │
+│  Data Input    │
+└───────┬────────┘
+        │
+        ▼
+┌─────────────────────────────────────┐
+│  RULE ENGINE EVALUATION             │
+│                                     │
+│  ┌───────────────────────────────┐ │
+│  │ Rule 1: Large Transaction     │ │ ──► Triggered?
+│  └───────────────────────────────┘ │
+│  ┌───────────────────────────────┐ │
+│  │ Rule 2: High-Risk Country     │ │ ──► Triggered?
+│  └───────────────────────────────┘ │
+│  ┌───────────────────────────────┐ │
+│  │ Rule 3: Sanctions Match       │ │ ──► Triggered?
+│  └───────────────────────────────┘ │
+│  ┌───────────────────────────────┐ │
+│  │ ... (7 more rules)            │ │ ──► Triggered?
+│  └───────────────────────────────┘ │
+│                                     │
+│  Output: List of triggered rules    │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  ML MODEL PREDICTION                │
+│                                     │
+│  ┌───────────────────────────────┐ │
+│  │ Feature Extraction            │ │
+│  │ - Encode categoricals         │ │
+│  │ - Select 13 features          │ │
+│  └──────────┬────────────────────┘ │
+│             ▼                       │
+│  ┌───────────────────────────────┐ │
+│  │ Random Forest                 │ │
+│  │ - 100 decision trees          │ │
+│  │ - Vote for classification     │ │
+│  │ - Calculate probability       │ │
+│  └──────────┬────────────────────┘ │
+│             ▼                       │
+│  Output: Risk Score (0.0 - 1.0)    │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  FINAL RISK DETERMINATION           │
+│                                     │
+│  Decision Tree:                     │
+│                                     │
+│  sanctions_flag == 1? ────────► HIGH│
+│         │ NO                         │
+│         ▼                            │
+│  risk_score > 0.8? ───────────► HIGH│
+│         │ NO                         │
+│         ▼                            │
+│  rules_count >= 2? ──────────► MEDIUM
+│         │ NO                         │
+│         ▼                            │
+│  rules_count == 1                   │
+│  OR risk_score > 0.5? ────────► MEDIUM
+│         │ NO                         │
+│         ▼                            │
+│      LOW                             │
+│                                     │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  RESPONSE GENERATION                │
+│                                     │
+│  {                                  │
+│    "transaction_id": "TXN123456",   │
+│    "rules_triggered": [...],        │
+│    "num_rules_triggered": 3,        │
+│    "risk_score": 0.87,              │
+│    "risk_label": "high",            │
+│    "final_risk": "HIGH"             │
+│  }                                  │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+              END
+```
+
+## 3. UiPath Integration Flow
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    UiPath Studio Workflow                     │
+└──────────────────────────────────────────────────────────────┘
+
+START
+  │
+  ▼
+┌────────────────┐
+│ Read CSV File  │
+│ transactions   │
+│   .csv         │
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Initialize     │
+│ Results        │
+│ DataTable      │
+└───────┬────────┘
+        │
+        ▼
+┌────────────────────────────┐
+│ For Each Row in Data Table │ ◄──────┐
+└───────┬────────────────────┘        │
+        │                             │
+        ▼                             │
+┌──────────────────┐                 │
+│ Build JSON       │                 │
+│ Request Body     │                 │
+└────────┬─────────┘                 │
+         │                            │
+         ▼                            │
+┌────────────────────────┐           │
+│ Try-Catch Block        │           │
+│  ┌──────────────────┐  │           │
+│  │ TRY:             │  │           │
+│  │                  │  │           │
+│  │ ┌──────────────┐ │  │           │
+│  │ │ HTTP Request │ │  │           │
+│  │ │ POST /check  │ │  │           │
+│  │ └──────┬───────┘ │  │           │
+│  │        ▼          │  │           │
+│  │ ┌──────────────┐ │  │           │
+│  │ │ Deserialize  │ │  │           │
+│  │ │ JSON         │ │  │           │
+│  │ └──────┬───────┘ │  │           │
+│  │        ▼          │  │           │
+│  │ ┌──────────────┐ │  │           │
+│  │ │ Extract Data │ │  │           │
+│  │ │ - risk_score │ │  │           │
+│  │ │ - rules      │ │  │           │
+│  │ │ - final_risk │ │  │           │
+│  │ └──────┬───────┘ │  │           │
+│  │        ▼          │  │           │
+│  │ ┌──────────────┐ │  │           │
+│  │ │ Add to       │ │  │           │
+│  │ │ Results DT   │ │  │           │
+│  │ └──────────────┘ │  │           │
+│  │                  │  │           │
+│  └──────────────────┘  │           │
+│  ┌──────────────────┐  │           │
+│  │ CATCH:           │  │           │
+│  │ - Log Error      │  │           │
+│  │ - Add Error Row  │  │           │
+│  │ - Continue       │  │           │
+│  └──────────────────┘  │           │
+└────────┬───────────────┘           │
+         │                            │
+         ▼                            │
+┌────────────────┐                   │
+│ Log Progress   │                   │
+│ Counter++      │                   │
+└────────┬───────┘                   │
+         │                            │
+         └────────────────────────────┘
+         │
+         ▼
+┌────────────────┐
+│ Write Results  │
+│ to Excel       │
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Generate       │
+│ Summary Report │
+└───────┬────────┘
+        │
+        ▼
+       END
+```
+
+## 4. Compliance Rule Evaluation Matrix
+
+```
+Transaction Features → Rules Evaluation → Triggered/Not Triggered
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    RULE EVALUATION MATRIX                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Transaction Amount                                              │
+│         │                                                        │
+│         ├─── > $1,000,000? ──────────► Large Transaction (BSA)  │
+│         │                                                        │
+│         └─── > $500,000 + Age < 30d ─► New Account High Txn    │
+│                                                                  │
+│  Countries                                                       │
+│         │                                                        │
+│         └─── In [Iran, NK, Syria]? ──► High-Risk Country (FATF)│
+│                                                                  │
+│  Sanctions Flag                                                  │
+│         │                                                        │
+│         └─── == 1? ──────────────────► Sanctions Match (OFAC)   │
+│                                                                  │
+│  Transaction Frequency                                           │
+│         │                                                        │
+│         ├─── Last 24h > 5? ──────────► Structuring Detection   │
+│         │                                                        │
+│         └─── Last 7d > 20? ──────────► Rapid Transactions      │
+│                                                                  │
+│  Account Status                                                  │
+│         │                                                        │
+│         └─── Dormant + Amount > $200K ► Dormant Activity       │
+│                                                                  │
+│  KYC Status                                                      │
+│         │                                                        │
+│         └─── != "verified"? ─────────► KYC Incomplete          │
+│                                                                  │
+│  International + Amount                                          │
+│         │                                                        │
+│         └─── Yes + > $300K? ─────────► Cross-Border High Value │
+│                                                                  │
+│  Beneficiary Pattern                                             │
+│         │                                                        │
+│         └─── Same > 3 times? ────────► Repeated Beneficiary    │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## 5. Data Flow Diagram
+
+```
+┌──────────────┐
+│ Plan Context │
+│    .txt      │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────────────────────────────┐
+│     generate_dataset.py              │
+│  - Reads requirements                │
+│  - Creates 1000 transactions         │
+│  - Adds suspicious patterns          │
+└──────┬───────────────────────────────┘
+       │
+       ▼
+┌──────────────────┐
+│ transactions.csv │◄────────────┐
+│  (18 columns)    │             │
+└──────┬───────────┘             │
+       │                         │
+       ├────────────┐            │
+       │            │            │
+       ▼            ▼            │
+┌─────────────┐  ┌───────────┐  │
+│ train_model │  │   Rules   │  │
+│   .py       │  │   Engine  │  │
+└──────┬──────┘  └─────┬─────┘  │
+       │                │        │
+       ▼                │        │
+┌─────────────┐        │        │
+│  model.pkl  │        │        │
+└──────┬──────┘        │        │
+       │               │        │
+       └───────┬───────┘        │
+               │                │
+               ▼                │
+        ┌────────────┐          │
+        │ FastAPI    │          │
+        │  Server    │          │
+        └─────┬──────┘          │
+              │                 │
+              ▼                 │
+        ┌─────────────┐         │
+        │ generate_   │         │
+        │ reports.py  │─────────┘
+        └──────┬──────┘
+               │
+               ▼
+        ┌────────────────────┐
+        │ compliance_report  │
+        │ .csv               │
+        │                    │
+        │ flagged_txns.csv   │
+        └────────────────────┘
+```
+
+## 6. Module Dependencies
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  External Packages                       │
+│  pandas | numpy | sklearn | fastapi | uvicorn | joblib  │
+└────────────────────┬────────────────────────────────────┘
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+        ▼            ▼            ▼
+┌──────────┐  ┌───────────┐  ┌────────┐
+│  Rules   │  │  Models   │  │  Data  │
+│  Engine  │  │  (ML)     │  │  Gen   │
+└────┬─────┘  └─────┬─────┘  └───┬────┘
+     │              │            │
+     │              │            │
+     └──────┬───────┴────────────┘
+            │
+            ▼
+      ┌──────────┐
+      │   API    │
+      │ (FastAPI)│
+      └────┬─────┘
+           │
+           ├─────────────┐
+           │             │
+           ▼             ▼
+    ┌────────────┐  ┌─────────┐
+    │  Reports   │  │ UiPath  │
+    │ Generator  │  │  RPA    │
+    └────────────┘  └─────────┘
+```
+
+## 7. Risk Scoring Visual
+
+```
+Risk Score Calculation:
+
+Input Features (13)
+    │
+    ├── transaction_amount ────┐
+    ├── account_age_days ──────┤
+    ├── txn_count_last_24h ────┤
+    ├── txn_count_last_7d ─────┤
+    ├── customer_avg_txn ──────┤
+    ├── is_international ──────┤
+    ├── sanctions_flag ────────┤    ┌──────────────────┐
+    ├── account_status_enc ────┼───►│  Random Forest   │
+    ├── transaction_type_enc ──┤    │   100 Trees      │
+    ├── kyc_status_enc ────────┤    │                  │
+    ├── channel_enc ───────────┤    │  Each tree votes │
+    ├── sender_country_enc ────┤    │  for class:      │
+    └── receiver_country_enc ──┘    │  0 (normal) or   │
+                                     │  1 (suspicious)  │
+                                     └────────┬─────────┘
+                                              │
+                                              ▼
+                                     ┌──────────────────┐
+                                     │  Average votes   │
+                                     │  → Probability   │
+                                     └────────┬─────────┘
+                                              │
+                                              ▼
+                                     Risk Score: 0.0 - 1.0
+                                              │
+                        ┌─────────────────────┼─────────────────────┐
+                        │                     │                     │
+                        ▼                     ▼                     ▼
+                   < 0.3 (LOW)         0.3-0.7 (MEDIUM)       > 0.7 (HIGH)
+```
+
+---
+
+**End of Architecture Documentation**

@@ -1,0 +1,258 @@
+PROJECT: RPA-Based Financial Compliance Monitoring System
+
+GOAL:
+Build a system that:
+1. Simulates bank transactions
+2. Applies regulatory compliance checks (rule-based)
+3. Uses an ML model to generate risk scores
+4. Exposes backend APIs
+5. Integrates with UiPath (external) for workflow automation
+
+Focus on clarity, correctness, and integration — not production scale.
+
+
+--------------------------------------------------
+1. SYSTEM ARCHITECTURE
+--------------------------------------------------
+
+Frontend (optional minimal UI)
+        ↓
+Backend (FastAPI)
+        ↓
+Dataset (CSV / in-memory)
+        ↓
+ML Model (risk scoring)
+        ↓
+UiPath (external consumer)
+
+
+--------------------------------------------------
+2. DATASET GENERATION
+--------------------------------------------------
+
+Generate synthetic dataset (500–1000 rows):
+
+Columns:
+- transaction_id
+- customer_id
+- account_age_days
+- account_status (active/dormant)
+- transaction_amount
+- transaction_type (transfer/deposit/withdrawal)
+- transaction_time (timestamp)
+- sender_country
+- receiver_country
+- beneficiary_id
+- beneficiary_bank
+- customer_avg_txn
+- txn_count_last_24h
+- txn_count_last_7d
+- kyc_status (verified/pending)
+- sanctions_flag (0/1)
+- device_location
+- channel (ATM/online/branch)
+- is_international (0/1)
+
+Save:
+transactions.csv
+
+
+--------------------------------------------------
+3. REGULATORY RULE ENGINE
+--------------------------------------------------
+
+Implement 10 compliance rules (functions):
+
+Each rule returns:
+- triggered (true/false)
+- rule_name
+
+Rules:
+
+1. Large transaction threshold (BSA)
+   IF transaction_amount > 1,000,000
+
+2. High-risk country (FATF)
+   IF receiver_country in [Iran, North Korea, Syria]
+
+3. Sanctions match (OFAC)
+   IF sanctions_flag == 1
+
+4. Structuring detection
+   IF txn_count_last_24h > 5
+
+5. Rapid transactions
+   IF txn_count_last_7d > threshold (e.g., 20)
+
+6. New account high transaction
+   IF account_age_days < 30 AND transaction_amount > 500,000
+
+7. Dormant account activity
+   IF account_status == "dormant" AND transaction_amount > 200,000
+
+8. Repeated beneficiary transfers
+   IF same beneficiary_id appears multiple times
+
+9. Cross-border high value
+   IF is_international == 1 AND transaction_amount > 300,000
+
+10. KYC incomplete
+   IF kyc_status != "verified"
+
+Return list of triggered rules per transaction
+
+
+--------------------------------------------------
+4. ML MODEL
+--------------------------------------------------
+
+Train a model to predict risk:
+
+Model:
+- RandomForestClassifier (preferred)
+
+Input features:
+- transaction_amount
+- account_age_days
+- txn_count_last_24h
+- txn_count_last_7d
+- customer_avg_txn
+- is_international
+- sanctions_flag
+- encoded categorical features
+
+Target:
+Create synthetic label:
+- suspicious (1)
+- normal (0)
+
+Model output:
+- risk_score (probability)
+- risk_label:
+    IF score < 0.3 → low
+    IF 0.3–0.7 → medium
+    IF > 0.7 → high
+
+Save:
+model.pkl
+
+
+--------------------------------------------------
+5. BACKEND (FastAPI)
+--------------------------------------------------
+
+Endpoints:
+
+1. GET /transactions
+Return dataset
+
+2. POST /predict
+Input:
+{
+  transaction features
+}
+Output:
+{
+  risk_score: float,
+  risk_label: string
+}
+
+3. POST /compliance-check
+Process:
+- Apply all rule checks
+- Call ML model
+- Combine results
+
+Return:
+{
+  transaction_id,
+  rules_triggered: [list],
+  risk_score,
+  final_risk
+}
+
+Final risk logic:
+
+IF sanctions_flag == 1 → HIGH
+ELSE IF risk_score > 0.8 → HIGH
+ELSE IF len(rules_triggered) >= 2 → MEDIUM
+ELSE → LOW
+
+
+--------------------------------------------------
+6. OUTPUT FILES
+--------------------------------------------------
+
+Generate:
+
+- transactions.csv
+- compliance_report.csv
+- flagged_transactions.csv
+- model.pkl
+
+Compliance report columns:
+transaction_id | rules_triggered | risk_score | final_risk
+
+
+--------------------------------------------------
+7. UIPATH INTEGRATION PLAN (DO NOT IMPLEMENT HERE)
+--------------------------------------------------
+
+Steps:
+
+1. Read transactions.csv
+2. For each row:
+    - Send data to /predict or /compliance-check
+3. Receive:
+    - risk_score
+    - rules
+4. Assign risk level
+5. Write results to Excel
+6. Generate final compliance report
+
+
+--------------------------------------------------
+8. OPTIONAL FRONTEND (MINIMAL)
+--------------------------------------------------
+
+Create simple UI (ONLY if time allows):
+
+Features:
+- Input transaction form
+- Submit transaction
+- Display risk result
+
+Stack:
+- Plain HTML + JS OR minimal React
+
+Do NOT:
+- Build full banking app
+- Add authentication
+- Add complex UI
+
+
+--------------------------------------------------
+9. CONSTRAINTS
+--------------------------------------------------
+
+- Keep everything simple and modular
+- No deep learning
+- No microservices
+- No overengineering
+- Code must be easy to integrate with UiPath
+
+
+--------------------------------------------------
+10. FINAL EXPECTATION
+--------------------------------------------------
+
+Deliverables:
+
+- Dataset
+- Rule engine
+- ML model
+- FastAPI backend
+- CSV outputs
+- UiPath workflow plan
+
+This should simulate a real-world compliance monitoring system.
