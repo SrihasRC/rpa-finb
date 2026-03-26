@@ -32,7 +32,7 @@ function setupEventListeners() {
 }
 
 // Page Navigation
-function showPage(pageName) {
+function showPage(pageName, clickedElement) {
     // Hide all pages
     document.querySelectorAll('[id$="Page"]').forEach(page => {
         page.classList.add('page-hidden');
@@ -48,7 +48,15 @@ function showPage(pageName) {
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
     });
-    event?.target?.classList.add('active');
+    
+    // Find the nav item that corresponds to this page
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => {
+        const onclick = item.getAttribute('onclick');
+        if (onclick && onclick.includes(`'${pageName}'`)) {
+            item.classList.add('active');
+        }
+    });
     
     // Update page title
     const titles = {
